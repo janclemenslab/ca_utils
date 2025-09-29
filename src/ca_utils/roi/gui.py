@@ -14,7 +14,10 @@ import defopt
 
 
 logging.basicConfig(level=logging.INFO)
-pg.setConfigOptions(imageAxisOrder="row-major")
+pg.setConfigOptions(imageAxisOrder="row-major", antialias=True)
+
+# Size (in pixels) for ROI vertex/translate handles to improve usability
+ROI_HANDLE_SIZE = 18
 
 
 class DoubleSlider(QSlider):
@@ -117,6 +120,17 @@ class StackView(pg.GraphicsLayoutWidget):
             # maxBounds=QtCore.QRect(0, 0, *self.data.shape),
         )
         roi.move_handle = roi.addTranslateHandle([x, y], name="move_handle")
+        # Enlarge handles to make them easier to grab
+        self._enlarge_roi_handles(roi)
+        # Ensure translate handle is also enlarged if not covered above
+        try:
+            roi.move_handle.setSize(ROI_HANDLE_SIZE)
+        except Exception:
+            try:
+                if hasattr(roi.move_handle, "radius"):
+                    roi.move_handle.radius = ROI_HANDLE_SIZE
+            except Exception:
+                pass
         roi.changed = True  # indicate mask needs update, which will trigger trace update
         roi.mask_changed = True  # indicate trace needs update
         roi.mask = None
@@ -158,6 +172,33 @@ class StackView(pg.GraphicsLayoutWidget):
         traces = self.get_traces()
         self.roi_changed.emit(traces)
         # self.image_data_changed.emit(self._data)
+
+    def _enlarge_roi_handles(self, roi):
+        """Increase the size of all handles of a given ROI.
+
+        Tries multiple APIs for compatibility across pyqtgraph versions.
+        """
+        try:
+            handles = roi.getHandles()
+        except Exception:
+            handles = []
+
+        for h in handles:
+            # Some pyqtgraph versions expose setSize on Handle
+            try:
+                h.setSize(ROI_HANDLE_SIZE)
+                continue
+            except Exception:
+                pass
+            # Fall back to setting radius directly if available
+            try:
+                if hasattr(h, "radius"):
+                    h.radius = ROI_HANDLE_SIZE
+                # Trigger a redraw if possible
+                if hasattr(h, "update"):
+                    h.update()
+            except Exception:
+                pass
 
     def get_masks(self):
         masks = []

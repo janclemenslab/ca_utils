@@ -201,23 +201,16 @@ def parse_daq(ypos, zpos, next_trigger, sound=None, channel_names=None) -> Dict[
     d_ypos = -np.diff(ypos)  # neg. since we want offsets
     # samples at which each frame has been stopped being acquired (y pos resets)
     frame_offset_samples, _ = find_peaks(d_ypos, height=np.max(d_ypos) / 2)
-    # frame_offset_samples
     frame_onset_samples = np.zeros_like(frame_offset_samples)
     frame_onset_samples[1:] = frame_offset_samples[:-1] + 1  # samples after frame offset
-    # detect first frame onset
-    # this is a bit brittle - maybe subtract the (median?) baseline???
-    # try:
-    #     height = np.max(d_ypos) / 2
-    #     tmp = find_peaks(-d_ypos[: frame_onset_samples[1]], height=height)
-    #     frame_onset_samples[0] = tmp[0] - 1
-    # except ValueError:
+
     height = np.max(-d_ypos[: frame_onset_samples[1]]) / 2
     tmp = find_peaks(-d_ypos[: frame_onset_samples[1]], height=height)
     frame_onset_samples[0] = tmp[0] - 1
 
-    # frame_onset_samples[0] = tmp[0] - 1
     d_nt = np.diff(next_trigger)
     trial_onset_samples, _ = find_peaks(d_nt, height=np.max(d_nt) / 2)
+
     # from these construct trial offset samples:
     trial_offset_samples = np.append(trial_onset_samples[1:], len(next_trigger))  # add last sample as final offset
 
@@ -236,7 +229,7 @@ def parse_daq(ypos, zpos, next_trigger, sound=None, channel_names=None) -> Dict[
             for cnt, (trial_start_sample, trial_end_sample) in enumerate(zip(trial_onset_samples, trial_offset_samples)):
                 trial_sound = sound[trial_start_sample:trial_end_sample, channel]
                 trial_sound[:10] = 0
-                trial_sound = np.convolve(np.abs(trial_sound), np.ones((10,)) / 10)
+                trial_sound = np.convolve(np.abs(trial_sound), np.ones((10,)) / 10)  # compute the envelope
 
                 thres = 0.01  # TODO: specify threshold for each channel
                 # print(np.mean(trial_sound), np.std(trial_sound))
@@ -377,11 +370,13 @@ def parse_trial_timing(daq_file_name, frame_shapes=None, channel_names: Optional
         channel_names = channel_names.copy()  # copy so we don't overwrite info in the protocol outside of this function
 
     # set channels to ignore to None
+    print(channel_names)
     to_ignore = ["y pos feedback", "piezo pos feeback", "line sync", "start trigger", "next trigger"]
     for ii, c in enumerate(channel_names):
         if c in to_ignore:
             channel_names[ii] = None
 
+    print(data.shape, channel_names)
     d = parse_daq(ypos, zpos, next_trigger, data, channel_names)
 
     daq_samplenumber = np.cumsum(daq_sampleinterval)
