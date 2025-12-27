@@ -86,7 +86,7 @@ class Session:
         # drop last file if it only contains a single volume or layer
         last_nb_frames = self._logs_files[-1].nb_frames
         nb_slices = self._logs_files[-1].nb_slices
-        if last_nb_frames < nb_slices + 2:
+        if last_nb_frames < nb_slices * 2:              # number of frames must be at least two times the number of slices
             self._logs_files = self._logs_files[:-1]
             logging.info("Last frame has less than two volumens - dropping.")
 
@@ -149,11 +149,23 @@ class Session:
         """
         if trial_number is None:
             stack, frame_times = self._all_trials_stack()
+            # Stack metadata together, transform to dict
             metadata = {}
+            for key in self.log.columns:
+                # For list or array elements
+                if isinstance(self.log[key][0], list) or isinstance(self.log[key][0], np.ndarray):
+                    # Make list of lists for fields with unequal length
+                    if key in ["file_names", "frames_first", "frames_last"]:
+                        metadata[key] = [ el for el in self.log[key] ]
+                    else:
+                        # Stack other fields to array 
+                        metadata[key] = np.hstack(self.log[key])
+                else:
+                    # For other data types, convert to array
+                    metadata[key] = self.log[key].to_numpy()
         else:
             stack, frame_times = self._single_trial_stack(trial_number)
             metadata = self.log.loc[trial_number].to_dict()
-            metadata["stim_info"] = self.stim_info(trial_number=trial_number)
         stack = self._reshape(stack, split_channels, split_volumes, force_dims, use_zarr)
 
         # volume times correspond to the time of the first frame for each volume
@@ -172,13 +184,15 @@ class Session:
             },
             attrs=metadata,
         )
+        # Add infos about the stimuli to the dataset attributes (works for single trials and all trials)
+        stack.attrs["stim_info"] = self.stim_info(trial=stack)
 
         return stack
 
     def _all_trials_stack(self, use_zarr: bool = False) -> np.ndarray:
         nb_trials = len(self.log)
         trial = self.log.loc[0]
-        total_nb_frames = sum([self.log.loc[trial_number].nb_frames for trial_number in range(nb_trials)])
+        total_nb_frames = self.log.loc[nb_trials-1, "trial_offset_frame"]   # Set the last trial offset frame as the total number of frames 
         if use_zarr:
             filename = "tmp.mmap"
             stack = np.memmap(
@@ -193,7 +207,10 @@ class Session:
         for trial_number in range(self.nb_trials):
             trial_stack, stack_frame_times = self._single_trial_stack(trial_number)
             stack[last_idx : int(last_idx + trial_stack.shape[0]), ...] = trial_stack
-            # frame_times[last_idx : int(last_idx + trial_stack.shape[0])] = stack_frame_times[: trial_stack.shape[0]]
+            # Add last time value to frame times of current stack (not for the first stack)
+            if trial_number > 0:
+                stack_frame_times = stack_frame_times + frame_times[last_idx-1]
+            frame_times[last_idx : int(last_idx + trial_stack.shape[0])] = stack_frame_times[: trial_stack.shape[0]]
             last_idx += trial_stack.shape[0]
 
         return stack, frame_times
