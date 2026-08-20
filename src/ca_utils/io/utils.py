@@ -205,7 +205,7 @@ def parse_daq(ypos, zpos, next_trigger, sound=None, channel_names=None) -> Dict[
     frame_onset_samples[1:] = frame_offset_samples[:-1] + 1  # samples after frame offset
 
     height = np.max(-d_ypos[: frame_onset_samples[1]]) / 2
-    tmp = find_peaks(-d_ypos[: frame_onset_samples[1]], height=height)
+    tmp, _ = find_peaks(-d_ypos[: frame_onset_samples[1]], height=height)
     frame_onset_samples[0] = tmp[0] - 1
 
     d_nt = np.diff(next_trigger)
